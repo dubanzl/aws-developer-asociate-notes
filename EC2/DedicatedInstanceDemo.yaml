@@ -1,0 +1,19 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: EC2 Dedicated Instance example
+
+Resources:
+
+  MyDedicatedInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-12345678
+      InstanceType: t3.micro
+      PlacementTenancy: dedicated
+      Tags:
+        - Key: Name
+          Value: DedicatedInstanceDemo
+
+
+# aws cloudformation deploy \
+#   --template-file DedicatedInstanceDemo.yaml \
+#   --stack-name dedicated-instance-demo

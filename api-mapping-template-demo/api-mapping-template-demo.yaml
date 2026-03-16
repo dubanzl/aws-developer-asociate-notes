@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "API Gateway REST API + Lambda + Mapping Template example (formats Lambda output)."
+
+Resources:
+  # -----------------------------
+  # Lambda IAM Role
+  # -----------------------------
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # -----------------------------
+  # Lambda Function (returns raw JSON)
+  # -----------------------------
+  RawUserLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 10
+      Code:
+        ZipFile: |
+          exports.handler = async () => {
+            // Raw (internal) shape
+            return {
+              user_id: "123",
+              first_name: "Duban",
+              last_name: "Zuluaga",
+              created_at: "2026-03-02T01:00:00Z"
+            };
+          };
+
+  # -----------------------------
+  # API Gateway REST API
+  # -----------------------------
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: MappingTemplateDemoApi
+
+  UsersResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !GetAtt RestApi.RootResourceId
+      PathPart: user
+
+  # -----------------------------
+  # Method: GET /user
+  # IMPORTANT: Proxy integration is NOT used here
+  # so we can use IntegrationResponses + templates.
+  # -----------------------------
+  GetUserMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref UsersResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FnArn}/invocations
+          - FnArn: !GetAtt RawUserLambda.Arn
+
+        # This is where you can map request -> Lambda input if you want.
+        # For GET, we send a simple JSON payload.
+        RequestTemplates:
+          application/json: |
+            {
+              "requestId": "$context.requestId",
+              "sourceIp": "$context.identity.sourceIp"
+            }
+
+        # -------- Integration Response Mapping Templates (VTL) ----------
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              application/json: |
+                #set($r = $input.path('$'))
+                {
+                  "id": "$r.user_id",
+                  "fullName": "$r.first_name $r.last_name",
+                  "createdAt": "$r.created_at",
+                  "source": "api-gateway-mapping-template"
+                }
+
+      # What the client receives (Method Response)
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: "Empty"
+
+  # -----------------------------
+  # Allow API Gateway to invoke Lambda
+  # -----------------------------
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref RawUserLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/GET/user
+
+  # -----------------------------
+  # Deploy + Stage
+  # -----------------------------
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - GetUserMethod
+    Properties:
+      RestApiId: !Ref RestApi
+
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref RestApi
+      DeploymentId: !Ref ApiDeployment
+      StageName: dev
+
+Outputs:
+  InvokeUrl:
+    Description: "Call this URL in your browser/curl"
+    Value: !Sub "https://${RestApi}.execute-api.${AWS::Region}.amazonaws.com/dev/user"

@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Simple Kinesis example with Data Stream, Firehose, and S3
+
+Resources:
+
+  MyBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub my-kinesis-demo-bucket-${AWS::AccountId}-${AWS::Region}
+
+  KinesisStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: my-demo-stream
+      ShardCount: 1
+
+  FirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub firehose-role-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: FirehoseS3AndKinesisAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - s3:PutObject
+                Resource:
+                  - !GetAtt MyBucket.Arn
+                  - !Sub ${MyBucket.Arn}/*
+              - Effect: Allow
+                Action:
+                  - kinesis:DescribeStream
+                  - kinesis:GetShardIterator
+                  - kinesis:GetRecords
+                  - kinesis:ListShards
+                Resource: !GetAtt KinesisStream.Arn
+              - Effect: Allow
+                Action:
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  FirehoseLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/kinesisfirehose/my-demo-firehose
+
+  FirehoseLogStream:
+    Type: AWS::Logs::LogStream
+    Properties:
+      LogGroupName: !Ref FirehoseLogGroup
+      LogStreamName: S3Delivery
+
+  MyFirehose:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: my-demo-firehose
+      DeliveryStreamType: KinesisStreamAsSource
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN: !GetAtt KinesisStream.Arn
+        RoleARN: !GetAtt FirehoseRole.Arn
+      S3DestinationConfiguration:
+        BucketARN: !GetAtt MyBucket.Arn
+        RoleARN: !GetAtt FirehoseRole.Arn
+        Prefix: incoming/
+        ErrorOutputPrefix: errors/
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 5
+        CompressionFormat: UNCOMPRESSED
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName: !Ref FirehoseLogGroup
+          LogStreamName: !Ref FirehoseLogStream
+
+Outputs:
+  StreamName:
+    Value: !Ref KinesisStream
+    Description: Kinesis Data Stream name
+
+  StreamArn:
+    Value: !GetAtt KinesisStream.Arn
+    Description: Kinesis Data Stream ARN
+
+  FirehoseName:
+    Value: !Ref MyFirehose
+    Description: Firehose delivery stream name
+
+  BucketName:
+    Value: !Ref MyBucket
+    Description: S3 bucket name

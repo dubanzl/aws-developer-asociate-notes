@@ -1,0 +1,25 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  WeightedRecordBlue:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: Z123456ABCDEFG
+      Name: app.example.com.
+      Type: A
+      TTL: '60'
+      SetIdentifier: blue
+      Weight: 80
+      ResourceRecords:
+        - 192.0.2.10
+
+  WeightedRecordGreen:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: Z123456ABCDEFG
+      Name: app.example.com.
+      Type: A
+      TTL: '60'
+      SetIdentifier: green
+      Weight: 20
+      ResourceRecords:
+        - 192.0.2.20

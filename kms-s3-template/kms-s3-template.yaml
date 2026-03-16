@@ -1,0 +1,54 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Example of using AWS KMS with CloudFormation for S3 encryption
+
+Resources:
+
+  MyKmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS key for encrypting S3 bucket objects
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowRootAccountFullAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: "kms:*"
+            Resource: "*"
+
+  MyKmsAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/my-s3-key
+      TargetKeyId: !Ref MyKmsKey
+
+  MyEncryptedBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt MyKmsKey.Arn
+            BucketKeyEnabled: true
+
+Outputs:
+  KmsKeyId:
+    Value: !Ref MyKmsKey
+    Description: KMS Key ID
+
+  KmsKeyArn:
+    Value: !GetAtt MyKmsKey.Arn
+    Description: KMS Key ARN
+
+  BucketName:
+    Value: !Ref MyEncryptedBucket
+    Description: Encrypted S3 bucket name
+
+
+# aws cloudformation deploy \
+#   --template-file kms-s3-template.yaml \
+#   --stack-name kms-s3-encryption-demo \
+#   --capabilities CAPABILITY_NAMED_IAM

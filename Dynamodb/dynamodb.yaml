@@ -1,0 +1,40 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: DynamoDB example for games with PK/SK and GSI
+
+Resources:
+  GamesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: GamesTable
+      BillingMode: PAY_PER_REQUEST
+
+      AttributeDefinitions:
+        - AttributeName: name
+          AttributeType: S
+        - AttributeName: version
+          AttributeType: S
+        - AttributeName: category
+          AttributeType: S
+
+      KeySchema:
+        - AttributeName: name
+          KeyType: HASH   # Partition Key
+        - AttributeName: version
+          KeyType: RANGE  # Sort Key
+
+      GlobalSecondaryIndexes:
+        - IndexName: CategoryNameIndex
+          KeySchema:
+            - AttributeName: category
+              KeyType: HASH   # GSI Partition Key
+            - AttributeName: name
+              KeyType: RANGE  # GSI Sort Key
+          Projection:
+            ProjectionType: ALL
+
+Outputs:
+  TableName:
+    Value: !Ref GamesTable
+
+  TableArn:
+    Value: !GetAtt GamesTable.Arn

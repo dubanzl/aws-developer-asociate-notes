@@ -1,0 +1,56 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: S3 per-user folder access using IAM policy variables (${aws:username})
+
+Resources:
+  BucketA:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: bucket-a
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  S3HomeFolderGroup:
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: S3HomeFolderGroup
+
+  S3HomeFolderPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: S3HomeFolderPolicy
+      Groups:
+        - !Ref S3HomeFolderGroup
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # 1) Allow listing ONLY their own folder (and the /user/ "root" for navigation)
+          - Sid: ListOnlyOwnPrefix
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource: !GetAtt BucketA.Arn
+            Condition:
+              StringLike:
+                s3:prefix:
+                  - "user/${aws:username}/*"
+                  - "user/${aws:username}"
+
+          # 2) Allow object actions ONLY inside their own folder
+          - Sid: ObjectAccessOnlyOwnPrefix
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+            Resource: !Sub "${BucketA.Arn}/user/\${aws:username}/*"
+
+Outputs:
+  BucketName:
+    Value: !Ref BucketA
+  GroupName:
+    Value: !Ref S3HomeFolderGroup
+  PolicyArn:
+    Value: !Ref S3HomeFolderPolicy

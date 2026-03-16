@@ -1,0 +1,25 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  LatencyUSEast1:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: Z123456ABCDEFG
+      Name: app.example.com.
+      Type: A
+      TTL: '60'
+      SetIdentifier: us-east-1-app
+      Region: us-east-1
+      ResourceRecords:
+        - 198.51.100.10
+
+  LatencyAPSoutheast2:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: Z123456ABCDEFG
+      Name: app.example.com.
+      Type: A
+      TTL: '60'
+      SetIdentifier: ap-southeast-2-app
+      Region: ap-southeast-2
+      ResourceRecords:
+        - 198.51.100.20

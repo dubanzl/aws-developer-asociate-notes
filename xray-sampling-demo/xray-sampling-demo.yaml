@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Demo X-Ray sampling with API Gateway -> Lambda (TracingEnabled) + X-Ray SamplingRule."
+
+Resources:
+  # ----------------------------
+  # IAM Role for Lambda
+  # ----------------------------
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # Basic logs
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        # Allow Lambda to publish segments/telemetry to X-Ray
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+
+  # ----------------------------
+  # Lambda with X-Ray tracing ON
+  # ----------------------------
+  DemoLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 5
+      TracingConfig:
+        Mode: Active
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+            // Do something small so we have latency to see
+            const start = Date.now();
+            while (Date.now() - start < 30) {} // busy-wait ~30ms (demo only)
+
+            return {
+              statusCode: 200,
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                ok: true,
+                message: "Hello from Lambda with X-Ray",
+                requestId: event?.requestContext?.requestId || null
+              })
+            };
+          };
+
+  # ----------------------------
+  # API Gateway REST API
+  # ----------------------------
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: XRaySamplingDemoApi
+
+  HelloResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !GetAtt RestApi.RootResourceId
+      PathPart: hello
+
+  HelloMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref HelloResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DemoLambda.Arn}/invocations
+      MethodResponses:
+        - StatusCode: 200
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref DemoLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/GET/hello
+
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - HelloMethod
+    Properties:
+      RestApiId: !Ref RestApi
+
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref RestApi
+      DeploymentId: !Ref ApiDeployment
+      StageName: dev
+      TracingEnabled: true   # <-- X-Ray tracing for API Gateway stage
+
+  # ----------------------------
+  # X-Ray Sampling Rule
+  # - traces a small % so you can SEE sampling
+  # ----------------------------
+  DemoSamplingRule:
+    Type: AWS::XRay::SamplingRule
+    Properties:
+      SamplingRule:
+        RuleName: "demo-low-sampling"
+        Priority: 10
+        FixedRate: 0.05          # 5% of requests (after reservoir is used)
+        ReservoirSize: 1         # keep 1 trace per second (roughly) minimum
+        ServiceName: "*"
+        ServiceType: "*"
+        Host: "*"
+        HTTPMethod: "*"
+        URLPath: "*"
+        ResourceARN: "*"
+        Version: 1
+
+Outputs:
+  InvokeUrl:
+    Description: "Call this URL many times; only some requests will appear in X-Ray due to sampling."
+    Value: !Sub "https://${RestApi}.execute-api.${AWS::Region}.amazonaws.com/dev/hello"
+
+
+  #   aws cloudformation deploy \
+  # --stack-name xray-sampling-demo \
+  # --template-file xray-sampling-demo.yaml \
+  # --capabilities CAPABILITY_NAMED_IAM

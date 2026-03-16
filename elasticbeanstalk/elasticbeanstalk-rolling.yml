@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Elastic Beanstalk environment using Rolling deployments
+
+Parameters:
+  SolutionStackName:
+    Type: String
+    Default: "64bit Amazon Linux 2 v5.9.0 running Node.js 20"
+    Description: Update this to a valid EB solution stack in your region
+
+Resources:
+  EbApplication:
+    Type: AWS::ElasticBeanstalk::Application
+    Properties:
+      ApplicationName: eb-rolling-demo
+
+  EbAppVersion:
+    Type: AWS::ElasticBeanstalk::ApplicationVersion
+    Properties:
+      ApplicationName: !Ref EbApplication
+      Description: v1
+      SourceBundle:
+        S3Bucket: your-deploy-bucket
+        S3Key: app-v1.zip
+
+  EbEnvironment:
+    Type: AWS::ElasticBeanstalk::Environment
+    Properties:
+      ApplicationName: !Ref EbApplication
+      EnvironmentName: eb-rolling-demo-env
+      SolutionStackName: !Ref SolutionStackName
+      VersionLabel: !Ref EbAppVersion
+
+      OptionSettings:
+        # ✅ This is the key part: "Rolling" deployment policy
+        - Namespace: aws:elasticbeanstalk:command
+          OptionName: DeploymentPolicy
+          Value: Rolling
+
+        # (Optional but common) Rolling update behavior for the ASG
+        - Namespace: aws:autoscaling:updatepolicy:rollingupdate
+          OptionName: RollingUpdateEnabled
+          Value: "true"
+
+        # How many instances per batch (Percent or Fixed)
+        - Namespace: aws:autoscaling:updatepolicy:rollingupdate
+          OptionName: RollingUpdateType
+          Value: Health
+
+        - Namespace: aws:autoscaling:updatepolicy:rollingupdate
+          OptionName: BatchSizeType
+          Value: Percentage
+
+        - Namespace: aws:autoscaling:updatepolicy:rollingupdate
+          OptionName: BatchSize
+          Value: "30"
+
+Outputs:
+  EnvironmentName:
+    Value: !Ref EbEnvironment

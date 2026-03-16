@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Audit SSM Parameter Store API calls using CloudTrail -> S3 (+ CloudWatch Logs)."
+
+Parameters:
+  SecretValue:
+    Type: String
+    NoEcho: true
+    Description: "The secret value stored in SSM Parameter Store (SecureString)."
+    Default: "SuperSecret123!"
+
+  ParameterName:
+    Type: String
+    Default: "/app/db/password"
+    Description: "SSM parameter name to create."
+
+  TrailName:
+    Type: String
+    Default: "audit-ssm-trail"
+    Description: "CloudTrail trail name."
+
+Resources:
+  # -----------------------------
+  # S3 bucket for CloudTrail logs
+  # -----------------------------
+  CloudTrailBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  CloudTrailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CloudTrailBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # CloudTrail needs to check bucket ACL
+          - Sid: AWSCloudTrailAclCheck
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:GetBucketAcl
+            Resource: !Sub arn:aws:s3:::${CloudTrailBucket}
+
+          # CloudTrail needs to write logs
+          - Sid: AWSCloudTrailWrite
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub arn:aws:s3:::${CloudTrailBucket}/AWSLogs/${AWS::AccountId}/*
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+
+  # -----------------------------
+  # CloudWatch Logs (optional destination)
+  # -----------------------------
+  CloudTrailLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/cloudtrail/${TrailName}"
+      RetentionInDays: 14
+
+  CloudTrailToCloudWatchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${TrailName}-CloudTrailToCWRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudTrailLogsPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt CloudTrailLogGroup.Arn
+
+  # -----------------------------
+  # CloudTrail Trail
+  # -----------------------------
+  AuditTrail:
+    Type: AWS::CloudTrail::Trail
+    DependsOn:
+      - CloudTrailBucketPolicy
+    Properties:
+      TrailName: !Ref TrailName
+      S3BucketName: !Ref CloudTrailBucket
+      IsMultiRegionTrail: true
+      IncludeGlobalServiceEvents: true
+      EnableLogFileValidation: true
+      IsLogging: true
+
+      # Send to CloudWatch Logs too
+      CloudWatchLogsLogGroupArn: !GetAtt CloudTrailLogGroup.Arn
+      CloudWatchLogsRoleArn: !GetAtt CloudTrailToCloudWatchRole.Arn
+
+  # -----------------------------
+  # SSM SecureString secret
+  # -----------------------------
+  AppDbPassword:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Ref ParameterName
+      Type: SecureString
+      Value: !Ref SecretValue
+      Description: "Demo secret for audit scenario. Access via GetParameter will appear in CloudTrail."
+
+Outputs:
+  SsmParameterName:
+    Value: !Ref ParameterName
+
+  CloudTrailS3Bucket:
+    Value: !Ref CloudTrailBucket
+
+  CloudWatchLogGroup:
+    Value: !Ref CloudTrailLogGroup

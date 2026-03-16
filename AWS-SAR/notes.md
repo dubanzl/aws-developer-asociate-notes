@@ -1,0 +1,1 @@
+AWS Serverless Application Repository is a managed repository that allows developers to publish, discover, and deploy serverless applications built using AWS SAM and CloudFormation.
