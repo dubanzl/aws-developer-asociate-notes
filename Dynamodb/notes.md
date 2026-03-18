@@ -65,3 +65,36 @@ Simple Rule for DynamoDB Queries (Important for Exams)
 | **Scan**                | Reads entire table                         | When you must inspect everything  | Expensive, slow                   |
 | **ConditionExpression** | Adds conditions to write/update/delete     | Prevent overwrite or check values | Used with Put/Update/Delete       |
 | **Streams**             | Captures item changes                      | Trigger downstream processing     | **Not for immediate atomic sync** |
+
+
+2️⃣ Partition (Physical Storage)
+
+A partition is the internal storage unit inside DynamoDB.
+
+You do not define it — DynamoDB creates them automatically.
+
+Example:
+
+DynamoDB Table
+│
+├── Physical Partition A
+├── Physical Partition B
+├── Physical Partition C
+
+Items are distributed across these partitions based on the partition key hash.
+
+
+1️⃣ DynamoDB reads the items from storage
+2️⃣ DynamoDB consumes RCUs for those reads
+3️⃣ DynamoDB applies the FilterExpression
+4️⃣ DynamoDB returns only the filtered items
+
+
+
+| Scan Type                          | How It Works                                    | Speed           | RCU Cost                 | When to Use                     | AWS Exam Tip                           |
+| ---------------------------------- | ----------------------------------------------- | --------------- | ------------------------ | ------------------------------- | -------------------------------------- |
+| **Sequential Scan**                | Reads partitions one by one                     | Slow            | High                     | Small tables or background jobs | Default scan behavior                  |
+| **Parallel Scan**                  | Multiple workers scan partitions simultaneously | Fast            | Same RCU cost but faster | Large tables                    | Best option when scanning entire table |
+| **Scan with FilterExpression**     | Reads all items first, then filters results     | Slow            | Same cost as full scan   | Rarely recommended              | Filters do **not reduce RCUs**         |
+| **Scan with ConsistentRead=false** | Eventually consistent reads                     | Slightly faster | Uses fewer RCUs          | Non-critical data               | Default behavior                       |
+| **Scan with ConsistentRead=true**  | Strongly consistent reads                       | Slower          | Double RCUs              | Rare use cases                  | Avoid for big scans                    |

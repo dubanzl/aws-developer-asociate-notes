@@ -52,3 +52,23 @@ Then the IOPS is:
 
 
 5.3 TiB - General Purpose SSD (gp2) volumes offer cost-effective storage that is ideal for a broad range of workloads.
+
+-------------------------------------------------------------------------------------------------------------------------
+
+2. Sharing a Disk Between Containers
+
+To share files between containers, you define a volume in the task definition and mount it into each container.
+
+Example concept:
+
+Task
+ ├── Container A
+ │     └── /shared-data
+ │
+ ├── Container B
+ │     └── /shared-data
+ │
+ └── Volume
+       └── shared-data
+
+Both containers read/write the same folder.
