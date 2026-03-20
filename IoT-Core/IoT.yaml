@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+
+  # -------------------------
+  # DynamoDB Table
+  # -------------------------
+  TemperatureTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: TemperatureData
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: deviceId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: deviceId
+          KeyType: HASH
+
+  # -------------------------
+  # Lambda Function
+  # -------------------------
+  ProcessTemperatureLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: ProcessTemperature
+      Runtime: python3.9
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+              print("Received:", json.dumps(event))
+              return {"statusCode": 200}
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaBasicPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:*
+                Resource: "*"
+
+  # -------------------------
+  # IoT Thing
+  # -------------------------
+  IoTThing:
+    Type: AWS::IoT::Thing
+    Properties:
+      ThingName: TemperatureSensorThing
+
+  # -------------------------
+  # IoT Policy
+  # -------------------------
+  IoTPolicy:
+    Type: AWS::IoT::Policy
+    Properties:
+      PolicyName: IoTDevicePolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - iot:Connect
+              - iot:Publish
+              - iot:Subscribe
+              - iot:Receive
+            Resource: "*"
+
+  # -------------------------
+  # IoT Topic Rule
+  # -------------------------
+  IoTRule:
+    Type: AWS::IoT::TopicRule
+    Properties:
+      RuleName: TemperatureRule
+      TopicRulePayload:
+        Sql: "SELECT * FROM 'fridge/temperature'"
+        Actions:
+          - Lambda:
+              FunctionArn: !GetAtt ProcessTemperatureLambda.Arn
+          - DynamoDBv2:
+              PutItem:
+                TableName: !Ref TemperatureTable
+        RuleDisabled: false
+
+  # -------------------------
+  # Permission for IoT → Lambda
+  # -------------------------
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ProcessTemperatureLambda
+      Action: lambda:InvokeFunction
+      Principal: iot.amazonaws.com

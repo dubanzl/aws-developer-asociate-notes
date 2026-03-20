@@ -59,9 +59,6 @@ But not Cognito user pools directly.
 | AWS::Serverless::StateMachine |
 
 
-
-
-
 EC2 Instance
      │
      ▼
